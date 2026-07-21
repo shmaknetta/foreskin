@@ -1,0 +1,162 @@
+local function getClosestEnemy(maxDistance)
+    local closestPlayer = nil
+    local shortestDistance = maxDistance or math.huge
+    for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") then
+            if player.Character.Humanoid.Health > 0 then
+                local distance = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+local PlayerGroup = Tabs.Player:AddLeftGroupbox('Модификаторы Персонажа')
+
+PlayerGroup:AddSlider('SprintSpeedMultiplier', {
+    Text = 'Множитель Скорости', Default = 1.0, Min = 1.0, Max = 2.5, Rounding = 2,
+    Tooltip = 'Плавно умножает твою оригинальную скорость бега',
+    Callback = function(Value)
+        pcall(function()
+            local Sprinting = require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting)
+            if not originalSprintSpeed then originalSprintSpeed = Sprinting.SprintSpeed or 29 end
+            Sprinting.SprintSpeed = originalSprintSpeed * Value
+        end)
+    end
+})
+
+PlayerGroup:AddToggle('BypassSprintToggle', {
+    Text = 'Безопасная Выносливость (Anti-Kick)', Default = false,
+    Tooltip = 'Сбрасывает стамину в безопасный момент для обхода кика сервера',
+    Callback = function(Value)
+        _G.AntiKickSprint = Value
+        if Value then
+            task.spawn(function()
+                while _G.AntiKickSprint do task.wait(0.2)
+                    pcall(function()
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                            local Sprinting = require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting)
+                            if Sprinting and Sprinting.Stamina and Sprinting.Stamina < 25 then
+                                Sprinting.StaminaLossDisabled = false
+                                local oldSpeed = LocalPlayer.Character.Humanoid.WalkSpeed
+                                LocalPlayer.Character.Humanoid.WalkSpeed = 16
+                                task.wait(0.2)
+                                Sprinting.Stamina = 100
+                                LocalPlayer.Character.Humanoid.WalkSpeed = oldSpeed
+                                Sprinting.StaminaLossDisabled = true
+                            end
+                        end
+                    end)
+                end
+            end)
+        else
+            pcall(function() require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting).StaminaLossDisabled = false end)
+        end
+    end
+})
+
+local AimingGroup = Tabs.Aiming:AddLeftGroupbox('Сетевой Reach & Kill Aura')
+
+task.spawn(function()
+    workspace.Hitboxes.ChildAdded:Connect(function(child)
+        if _G.HitboxAuraActive and child:IsA("BasePart") then
+            if string.find(child.Name, LocalPlayer.Name) or child.Name == "Hitbox" then
+                local target = getClosestEnemy(Options.ReachDistanceSlider.Value)
+                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    child.CFrame = target.Character.HumanoidRootPart.CFrame
+                end
+            end
+        end
+    end)
+end)
+
+AimingGroup:AddToggle('KillAuraMasterToggle', {
+    Text = 'Активировать Авто-Kill Aura', Default = false,
+    Tooltip = 'Автоматически шлет пакеты удара на сервер и тепает хитбокс',
+    Callback = function(Value)
+        _G.HitboxAuraActive = Value
+        _G.KillAuraLoop = Value     
+        if Value then
+            task.spawn(function()
+                while _G.KillAuraLoop do
+                    local target = getClosestEnemy(Options.ReachDistanceSlider.Value)
+                    if target then
+                        NetworkRemote:FireServer("UseActorAbility", "Slash")
+                        task.wait(Options.AttackCooldownSlider.Value)
+                    else
+                        task.wait(0.1) 
+                    end
+                end
+            end)
+        end
+    end
+})
+
+AimingGroup:AddToggle('NetworkTriggerbot', {
+    Text = 'Сетевой Триггербот', Default = false,
+    Tooltip = 'Бьет через сеть, если вражеский хитбокс попал в прицел',
+    Callback = function(Value)
+        _G.NetTriggerActive = Value
+        if Value then
+            task.spawn(function()
+                local mouse = LocalPlayer:GetMouse()
+                while _G.NetTriggerActive do task.wait(0.01)
+                    pcall(function()
+                        local target = mouse.Target
+                        if target and (target.Parent == workspace:FindFirstChild("Hitboxes") or target.Name:find("Hitbox")) then
+                            NetworkRemote:FireServer("UseActorAbility", "Slash")
+                            task.wait(Options.AttackCooldownSlider.Value) 
+                        end
+                    end)
+                end
+            end)
+        end
+    end
+})
+
+AimingGroup:AddSlider('ReachDistanceSlider', {Text = 'Радиус Атаки (Reach)', Default = 30, Min = 5, Max = 150, Rounding = 0, Compact = false, Callback = function() end})
+AimingGroup:AddSlider('AttackCooldownSlider', {Text = 'Кулдаун атаки (Задержка)', Default = 1.8, Min = 0.1, Max = 3.5, Rounding = 2, Compact = false, Callback = function() end})
+
+local BlockGroup = Tabs.Block:AddLeftGroupbox('Автоматическая защита')
+
+BlockGroup:AddToggle('AutoBlockToggle', {
+    Text = 'Активировать Автоблок (Raging Pace)', Default = false,
+    Tooltip = 'Включает блок, когда рядом спавнитcя вражеский хитбокс',
+    Callback = function(Value)
+        _G.AutoBlockActive = Value
+        if Value then
+            _G.BlockConnection = workspace.Hitboxes.ChildAdded:Connect(function(child)
+                if _G.AutoBlockActive and child:IsA("BasePart") then
+                    if not string.find(child.Name, LocalPlayer.Name) and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        task.spawn(function()
+                            local distance = (child.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                            if distance <= Options.BlockDistanceSlider.Value then
+                                NetworkRemote:FireServer("UseActorAbility", "RagingPace")
+                                task.wait(1)
+                            end
+                        end)
+                    end
+                end
+            end)
+        else
+            if _G.BlockConnection then _G.BlockConnection:Disconnect() _G.BlockConnection = nil end
+        end
+    end
+})
+
+BlockGroup:AddSlider('BlockDistanceSlider', {Text = 'Дистанция срабатывания', Default = 12, Min = 5, Max = 30, Rounding = 0, Compact = false, Callback = function() end})
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ 'BackgroundColor', 'MainColor', 'AccentColor', 'OutlineColor', 'FontColor' })
+ThemeManager:SetFolder('ForsakenArchivedHub')
+SaveManager:SetFolder('ForsakenArchivedHub/configs')
+SaveManager:BuildConfigSection(Tabs.Settings)
+ThemeManager:ApplyToTab(Tabs.Settings)
+SaveManager:LoadAutoloadConfig()
+
