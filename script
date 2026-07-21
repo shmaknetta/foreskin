@@ -4,282 +4,284 @@ Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
-NetworkRemote = game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("RemoteEvent")
-LocalPlayer = game:GetService("Players").LocalPlayer
-originalSprintSpeed = nil
-IndexedGenerators = {}
-
-Window = Library:CreateWindow({
-    Title = 'Forsaken Hub | Pre-Alpha v1.8',
-    Center = true,
-    AutoShow = true,
-    TabPadding = 8,
-    MenuFadeTime = 0.2
-})
-
-Tabs = {
-    Home = Window:AddTab('Home'),
-    Visuals = Window:AddTab('Visuals'),
-    Generators = Window:AddTab('Generators'),
-    Player = Window:AddTab('Player'),
-    Misc = Window:AddTab('Misc'),
-    Rage = Window:AddTab('Rage'),
-    Aiming = Window:AddTab('Aiming'),
-    Block = Window:AddTab('Block'),
-    Settings = Window:AddTab('UI Settings')
-}
-
-function indexGenerators()
-    table.clear(IndexedGenerators)
-    local ingame = workspace:FindFirstChild("Map") 
-        and workspace.Map:FindFirstChild("Ingame") 
-        and workspace.Map.Ingame:FindFirstChild("Map")
-        
-    if ingame then
-        for _, obj in ipairs(ingame:GetChildren()) do
-            if obj.Name:lower():find("generator") and obj:FindFirstChild("Remotes") then
-                local rf = obj.Remotes:FindFirstChild("RF")
-                local re = obj.Remotes:FindFirstChild("RE")
-                local rootPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                
-                if rf and re and rootPart then
-                    table.insert(IndexedGenerators, {
-                        Object = obj,
-                        Position = rootPart.Position,
-                        RF = rf,
-                        RE = re
-                    })
-                end
+NetworkRemote = game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("RemoteEvent") LocalPlayer = game:GetService("Players").LocalPlayer originalSprintSpeed, IndexedGenerators, ActiveESP = nil, {}, {} Window = Library:CreateWindow({Title ='Forsaken Hub | Beta v2.0', Center = true, AutoShow = true, TabPadding = 8, MenuFadeTime = 0.2}) Tabs = {Home = Window:AddTab('Home'), Visuals = Window:AddTab('Visuals'), Generators = Window:AddTab('Generators'), Player = Window:AddTab('Player'), Misc = Window:AddTab('Misc'), Rage = Window:AddTab('Rage'), Aiming = Window:AddTab('Aiming'), Block = Window:AddTab('Block'), Settings = Window:AddTab('UI Settings')} function indexGenerators()
+table.clear(IndexedGenerators)
+local ingame = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Ingame") and workspace.Map.Ingame:FindFirstChild("Map")
+if ingame then
+    for _, obj in ipairs(ingame:GetChildren()) do
+        if obj.Name:lower():find("generator") and obj:FindFirstChild("Remotes") then
+            local rf, re = obj.Remotes:FindFirstChild("RF"), obj.Remotes:FindFirstChild("RE")
+            local rPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if rf and re and rPart then
+                table.insert(IndexedGenerators, {Object = obj, Position = rPart.Position, RF = rf, RE = re})
             end
         end
     end
 end
-
-local LeftHomeGroup = Tabs.Home:AddLeftGroupbox('Profile')
-local RightHomeGroup = Tabs.Home:AddRightGroupbox('Information')
-
-LeftHomeGroup:AddLabel('Welcome back, ' .. LocalPlayer.Name .. '!')
-LeftHomeGroup:AddLabel('Executor: ' .. (identifyexecutor and identifyexecutor() or "Unknown"))
-LeftHomeGroup:AddButton({Text = 'Support Discord', Func = function() setclipboard("https://discord.gg") end})
-
-RightHomeGroup:AddLabel('⚠️ Version: Pre-Alpha 1.8')
-RightHomeGroup:AddLabel('🟢 Script Status: Online')
-RightHomeGroup:AddLabel('Developers: iyre & AI')
-
-local GenGroup = Tabs.Generators:AddLeftGroupbox('Автоматизация Новых Генераторов')
-
-GenGroup:AddToggle('AutoSolveNewGen', {
-    Text = 'Авто-починка генераторов',
-    Default = false,
-    Tooltip = 'Чинит любой генератор из кэша памяти без лагов процессора',
-    Callback = function(Value)
-        _G.NewGenFarmActive = Value
-        if Value then
-            indexGenerators()
-            task.spawn(function()
-                while _G.NewGenFarmActive do
-                    task.wait(0.4)
-                    local char = LocalPlayer.Character
-                    local root = char and char:FindFirstChild("HumanoidRootPart")
-                    
-                    if root then
-                        local myPos = root.Position
-                        local radius = Options.NewGenRadiusSlider.Value
-                        
-                        for _, gen in ipairs(IndexedGenerators) do
-                            if not _G.NewGenFarmActive then break end
-                            local distance = (gen.Position - myPos).Magnitude
-                            if distance <= radius then
-                                pcall(function()
-                                    gen.RF:InvokeServer("enter")
-                                    task.wait(0.05)
-                                    for i = 1, 7 do
-                                        if not _G.NewGenFarmActive then break end
-                                        gen.RE:FireServer()
-                                        task.wait(0.02)
-                                    end
-                                end)
-                                task.wait(0.5)
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-    end
-})
-
-GenGroup:AddButton({
-    Text = 'Обновить базу карт (Новый раунд)',
-    Func = function()
-        indexGenerators()
-        Library:Notify("Список генераторов успешно переиндексирован!", 3)
-    end,
-    DoubleClick = false,
-    Tooltip = 'Нажми при старте нового матча'
-})
+end
 local function getClosestEnemy(maxDistance)
-    local closestPlayer = nil
-    local shortestDistance = maxDistance or math.huge
-    for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") then
-            if player.Character.Humanoid.Health > 0 then
-                local distance = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
-                if distance < shortestDistance then
-                    shortestDistance = distance
-                    closestPlayer = player
-                end
+local closestPlayer, shortestDistance = nil, maxDistance or math.huge
+for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+    if player ~ = LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") then
+        if player.Character.Humanoid.Health > 0 then
+            local distance = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+            if distance < shortestDistance then
+                shortestDistance, closestPlayer = distance, player
             end
         end
     end
-    return closestPlayer
 end
-
-local PlayerGroup = Tabs.Player:AddLeftGroupbox('Модификаторы Персонажа')
-
-PlayerGroup:AddSlider('SprintSpeedMultiplier', {
-    Text = 'Множитель Скорости', Default = 1.0, Min = 1.0, Max = 2.5, Rounding = 2,
-    Tooltip = 'Плавно умножает твою оригинальную скорость бега',
-    Callback = function(Value)
-        pcall(function()
-            local Sprinting = require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting)
-            if not originalSprintSpeed then originalSprintSpeed = Sprinting.SprintSpeed or 29 end
-            Sprinting.SprintSpeed = originalSprintSpeed * Value
-        end)
-    end
-})
-
-PlayerGroup:AddToggle('BypassSprintToggle', {
-    Text = 'Безопасная Выносливость (Anti-Kick)', Default = false,
-    Tooltip = 'Сбрасывает стамину в безопасный момент для обхода кика сервера',
-    Callback = function(Value)
-        _G.AntiKickSprint = Value
-        if Value then
-            task.spawn(function()
-                while _G.AntiKickSprint do task.wait(0.2)
-                    pcall(function()
-                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                            local Sprinting = require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting)
-                            if Sprinting and Sprinting.Stamina and Sprinting.Stamina < 25 then
-                                Sprinting.StaminaLossDisabled = false
-                                local oldSpeed = LocalPlayer.Character.Humanoid.WalkSpeed
-                                LocalPlayer.Character.Humanoid.WalkSpeed = 16
-                                task.wait(0.2)
-                                Sprinting.Stamina = 100
-                                LocalPlayer.Character.Humanoid.WalkSpeed = oldSpeed
-                                Sprinting.StaminaLossDisabled = true
-                            end
-                        end
-                    end)
-                end
-            end)
+return closestPlayer
+end
+local function removeESP(player)
+if ActiveESP[player] then
+    pcall(function()
+    ActiveESP[player]:Destroy()
+end
+) ActiveESP[player] = nil
+end
+end
+local function createESP(player)
+if not player or player == LocalPlayer then
+    return
+end
+local isKiller = player.Character and player.Character:FindFirstChildOfClass("Tool")
+if not (isKiller and Toggles.KillerESPToggle.Value or Toggles.SurvivorESPToggle.Value) then
+    removeESP(player)
+    return
+end
+if not player.Character then
+    return
+end
+if ActiveESP[player] and ActiveESP[player].Parent then
+    local chosenColor = isKiller and Options.KillerESPColor.Value or Options.SurvivorESPColor.Value ActiveESP[player].FillColor, ActiveESP[player].OutlineColor = chosenColor, chosenColor
+    return
+end
+local hl = Instance.new("Highlight", player.Character) hl.Name, hl.Adornee, hl.FillOpacity, hl.OutlineOpacity, hl.DepthMode ="ForsakenESP", player.Character, 0.4, 1.0, Enum.HighlightDepthMode.AlwaysOnTop
+local targetColor = isKiller and Options.KillerESPColor.Value or Options.SurvivorESPColor.Value hl.FillColor, hl.OutlineColor = targetColor, targetColor ActiveESP[player] = hl
+end
+local LeftHomeGroup, RightHomeGroup = Tabs.Home:AddLeftGroupbox('Profile'), Tabs.Home:AddRightGroupbox('Information') LeftHomeGroup:AddLabel('Welcome back, '.. LocalPlayer.Name ..'!') LeftHomeGroup:AddLabel('Executor: '.. (identifyexecutor and identifyexecutor() or"Unknown")) LeftHomeGroup:AddButton({Text ='Support Discord', Func = function()
+setclipboard("https://discord.gg")
+end
+}) RightHomeGroup:AddLabel('🚀 Version: Beta 2.0') RightHomeGroup:AddLabel('🟢 Status: Universal Support') RightHomeGroup:AddLabel('Developers: iyre & AI Skidded')
+local VisualsGroup = Tabs.Visuals:AddLeftGroupbox('Подсветка объектов (ESP)') VisualsGroup:AddToggle('KillerESPToggle', {Text ='Подсветка Убийцы', Default = false}):AddColorPicker('KillerESPColor', {Default = Color3.fromRGB(255, 0, 0), Title ='Цвет ...'}) VisualsGroup:AddToggle('SurvivorESPToggle', {Text ='Подсветка Выживших', Default = false}):AddColorPicker('SurvivorESPColor', {Default = Color3.fromRGB(0, 255, 0), Title ='Цвет ...'}) VisualsGroup:AddToggle('GeneratorESPToggle', {Text ='Подсветка Генераторов', Default = false}):AddColorPicker('GeneratorESPColor', {Default = Color3.fromRGB(0, 160, 255), Title ='Цвет ...'}) task.spawn(function()
+while true do
+    task.wait(0.5) pcall(function()
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+        if p.Character then
+            createESP(p)
         else
-            pcall(function() require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting).StaminaLossDisabled = false end)
+            removeESP(p)
         end
     end
-})
-
-local AimingGroup = Tabs.Aiming:AddLeftGroupbox('Сетевой Reach & Kill Aura')
-
-task.spawn(function()
-    workspace.Hitboxes.ChildAdded:Connect(function(child)
-        if _G.HitboxAuraActive and child:IsA("BasePart") then
-            if string.find(child.Name, LocalPlayer.Name) or child.Name == "Hitbox" then
-                local target = getClosestEnemy(Options.ReachDistanceSlider.Value)
-                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-                    child.CFrame = target.Character.HumanoidRootPart.CFrame
+end
+)
+end
+end
+) game:GetService("Players").PlayerRemoving:Connect(removeESP) task.spawn(function()
+while true do
+    task.wait(1)
+    if Toggles.GeneratorESPToggle.Value and #IndexedGenerators > 0 then
+        for _, gen in ipairs(IndexedGenerators) do
+            pcall(function()
+            if gen.Object and gen.Object.Parent then
+                if not gen.Object:FindFirstChild("GenESP") then
+                    local hl = Instance.new("Highlight", gen.Object) hl.Name, hl.FillColor, hl.OutlineColor, hl.FillOpacity, hl.DepthMode ="GenESP", Options.GeneratorESPColor.Value, Options.GeneratorESPColor.Value, 0.3, Enum.HighlightDepthMode.AlwaysOnTop
+                else
+                    gen.Object.GenESP.FillColor, gen.Object.GenESP.OutlineColor = Options.GeneratorESPColor.Value, Options.GeneratorESPColor.Value
                 end
             end
         end
-    end)
-end)
-
-AimingGroup:AddToggle('KillAuraMasterToggle', {
-    Text = 'Активировать Авто-Kill Aura', Default = false,
-    Tooltip = 'Автоматически шлет пакеты удара на сервер и тепает хитбокс',
-    Callback = function(Value)
-        _G.HitboxAuraActive = Value
-        _G.KillAuraLoop = Value     
-        if Value then
-            task.spawn(function()
-                while _G.KillAuraLoop do
-                    local target = getClosestEnemy(Options.ReachDistanceSlider.Value)
-                    if target then
-                        NetworkRemote:FireServer("UseActorAbility", "Slash")
-                        task.wait(Options.AttackCooldownSlider.Value)
-                    else
-                        task.wait(0.1) 
-                    end
-                end
-            end)
+        )
+    end
+else
+    for _, gen in ipairs(IndexedGenerators) do
+        pcall(function()
+        if gen.Object and gen.Object:FindFirstChild("GenESP") then
+            gen.Object.GenESP:Destroy()
         end
     end
-})
-
-AimingGroup:AddToggle('NetworkTriggerbot', {
-    Text = 'Сетевой Триггербот', Default = false,
-    Tooltip = 'Бьет через сеть, если вражеский хитбокс попал в прицел',
-    Callback = function(Value)
-        _G.NetTriggerActive = Value
-        if Value then
-            task.spawn(function()
-                local mouse = LocalPlayer:GetMouse()
-                while _G.NetTriggerActive do task.wait(0.01)
+    )
+end
+end
+end
+end
+)
+local GenGroup = Tabs.Generators:AddLeftGroupbox('Автоматизация Новых Генераторов') GenGroup:AddToggle('AutoSolveNewGen', { Text ='Авто-починка генераторов', Default = false, Tooltip ='Чинит генераторы из кэша с обходом SoulBuster 001', Callback = function(Value)
+_G.NewGenFarmActive = Value
+if Value then
+    indexGenerators() task.spawn(function()
+    while _G.NewGenFarmActive do
+        task.wait(0.4)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            for _, gen in ipairs(IndexedGenerators) do
+                if not _G.NewGenFarmActive then
+                    break
+                end
+                if (gen.Position - char.HumanoidRootPart.Position).Magnitude < = Options.NewGenRadiusSlider.Value then
                     pcall(function()
-                        local target = mouse.Target
-                        if target and (target.Parent == workspace:FindFirstChild("Hitboxes") or target.Name:find("Hitbox")) then
-                            NetworkRemote:FireServer("UseActorAbility", "Slash")
-                            task.wait(Options.AttackCooldownSlider.Value) 
+                    gen.RF:InvokeServer("enter") task.wait(Options.BypassDelaySlider.Value)
+                    for i = 1, 7 do
+                        if not _G.NewGenFarmActive then
+                            break
                         end
-                    end)
-                end
-            end)
-        end
-    end
-})
-
-AimingGroup:AddSlider('ReachDistanceSlider', {Text = 'Радиус Атаки (Reach)', Default = 30, Min = 5, Max = 150, Rounding = 0, Compact = false, Callback = function() end})
-AimingGroup:AddSlider('AttackCooldownSlider', {Text = 'Кулдаун атаки (Задержка)', Default = 1.8, Min = 0.1, Max = 3.5, Rounding = 2, Compact = false, Callback = function() end})
-
-local BlockGroup = Tabs.Block:AddLeftGroupbox('Автоматическая защита')
-
-BlockGroup:AddToggle('AutoBlockToggle', {
-    Text = 'Активировать Автоблок (Raging Pace)', Default = false,
-    Tooltip = 'Включает блок, когда рядом спавнитcя вражеский хитбокс',
-    Callback = function(Value)
-        _G.AutoBlockActive = Value
-        if Value then
-            _G.BlockConnection = workspace.Hitboxes.ChildAdded:Connect(function(child)
-                if _G.AutoBlockActive and child:IsA("BasePart") then
-                    if not string.find(child.Name, LocalPlayer.Name) and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        task.spawn(function()
-                            local distance = (child.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-                            if distance <= Options.BlockDistanceSlider.Value then
-                                NetworkRemote:FireServer("UseActorAbility", "RagingPace")
-                                task.wait(1)
-                            end
-                        end)
+                        gen.RE:FireServer() task.wait(0.02)
                     end
                 end
-            end)
-        else
-            if _G.BlockConnection then _G.BlockConnection:Disconnect() _G.BlockConnection = nil end
+                ) task.wait(0.5)
+            end
         end
     end
+end
+end
+)
+end
+end
+}) GenGroup:AddButton({Text ='Обновить базу карт (Новый раунд)', Func = function()
+indexGenerators() Library:Notify("База карт обновлена!", 3)
+end
+, DoubleClick = false}) GenGroup:AddSlider('BypassDelaySlider', {Text ='Задержка обхода (Анти-кик)', Default = 1.6, Min = 0.5, Max = 3.0, Rounding = 1, Compact = false, Callback = function()
+end
+}) GenGroup:AddSlider('NewGenRadiusSlider', {Text ='Радиус авто-починки', Default = 20, Min = 5, Max = 300, Rounding = 0, Compact = false, Callback = function()
+end
 })
-
-BlockGroup:AddSlider('BlockDistanceSlider', {Text = 'Дистанция срабатывания', Default = 12, Min = 5, Max = 30, Rounding = 0, Compact = false, Callback = function() end})
-
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({ 'BackgroundColor', 'MainColor', 'AccentColor', 'OutlineColor', 'FontColor' })
-ThemeManager:SetFolder('ForsakenArchivedHub')
-SaveManager:SetFolder('ForsakenArchivedHub/configs')
-SaveManager:BuildConfigSection(Tabs.Settings)
-ThemeManager:ApplyToTab(Tabs.Settings)
-SaveManager:LoadAutoloadConfig()
-
-print("Forsaken Multi-Hub v1.8 успешно запущен локально!")
-
-GenGroup:AddSlider('NewGenRadiusSlider', {Text = 'Радиус авто-починки', Default = 20, Min = 5, Max = 300, Rounding = 0, Compact = false, Callback = function() end})
+local PlayerGroup = Tabs.Player:AddLeftGroupbox('Модификаторы Персонажа') PlayerGroup:AddSlider('SprintSpeedMultiplier', { Text ='Множитель Скорости', Default = 1.0, Min = 1.0, Max = 2.5, Rounding = 2, Callback = function(Value)
+pcall(function()
+local Sprinting = require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting)
+if not originalSprintSpeed then
+    originalSprintSpeed = Sprinting.SprintSpeed or 29
+end
+Sprinting.SprintSpeed = originalSprintSpeed * Value
+end
+)
+end
+}) PlayerGroup:AddToggle('BypassSprintToggle', { Text ='Безопасная Выносливость (Anti-Kick)', Default = false, Callback = function(Value)
+_G.AntiKickSprint = Value
+if Value then
+    task.spawn(function()
+    while _G.AntiKickSprint do
+        task.wait(0.2) pcall(function()
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            local Sprinting = require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting)
+            if Sprinting and Sprinting.Stamina and Sprinting.Stamina < 25 then
+                Sprinting.StaminaLossDisabled = false
+                local oldSpeed = LocalPlayer.Character.Humanoid.WalkSpeed LocalPlayer.Character.Humanoid.WalkSpeed = 16 task.wait(0.2) Sprinting.Stamina = 100 LocalPlayer.Character.Humanoid.WalkSpeed = oldSpeed Sprinting.StaminaLossDisabled = true
+            end
+        end
+    end
+    )
+end
+end
+)
+else
+    pcall(function()
+    require(game:GetService("ReplicatedStorage").Systems.Character.Game.Sprinting).StaminaLossDisabled = false
+end
+)
+end
+end
+}) PlayerGroup:AddToggle('AntiSlownessToggle', { Text ='Анти-Замедление (Anti-Slowness)', Default = false, Tooltip ='Удаляет наложенные дебаффы на уменьшение скорости', Используйте код с осторожностью.Callback = function(Value)
+_G.AntiSlownessActive = Valueif Value then
+task.spawn(function()
+while _G.AntiSlownessActive do
+    task.wait(0.1)pcall(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") thenfor _, effect in ipairs(LocalPlayer.Character:GetChildren()) doif effect:IsA("StatusEffect") and (effect.Name:lower():find("slow") or effect.Name:lower():find("debuff")) then
+        effect:Destroy() endendend
+    end
+    )
+end
+end
+)
+end
+end
+})
+local AimingGroup = Tabs.Aiming:AddLeftGroupbox('Сетевой Reach & Kill Aura')task.spawn(function()
+workspace.Hitboxes.ChildAdded:Connect(function(child)
+if _G.HitboxAuraActive and child:IsA("BasePart") thenlocal lPlr = game:GetService("Players").LocalPlayerif string.find(child.Name, lPlr.Name) or child.Name =="Hitbox"or child.Name:lower():find("hit") thentask.spawn(function()
+local target = getClosestEnemy(Options.ReachDistanceSlider.Value)
+if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") thenlocal tPart, rSize = target.Character.HumanoidRootPart, Options.ReachDistanceSlider.Valuechild.Size, child.Transparency, child.Color, child.CanCollide = Vector3.new(rSize, rSize, rSize), 0.5, Color3.fromRGB(255, 0, 0), falsefor i = 1, 15 do
+if not _G.HitboxAuraActive or not child or not child.Parent then
+    break
+end
+child.CFrame = tPart.CFrame task.wait(0.01) endend
+end
+)endend
+end
+)
+end
+)AimingGroup:AddToggle('KillAuraMasterToggle', {Text ='Активировать Авто-Kill Aura', Default = false, Callback = function(Value)
+_G.HitboxAuraActive, _G.KillAuraLoop = Value, Valueif Value then
+task.spawn(function()
+while _G.KillAuraLoop dolocal target = getClosestEnemy(Options.ReachDistanceSlider.Value)
+if target then
+    NetworkRemote:FireServer("UseActorAbility","Slash") task.wait(Options.AttackCooldownSlider.Value)
+else
+    task.wait(0.1) endend
+end
+)
+end
+end
+})AimingGroup:AddToggle('NetworkTriggerbot', {Text ='Сетевой Триггербот', Default = false, Callback = function(Value)
+_G.NetTriggerActive = Valueif Value then
+task.spawn(function()
+local mouse = LocalPlayer:GetMouse()
+while _G.NetTriggerActive do
+    task.wait(0.01)pcall(function()
+    if mouse.Target and (mouse.Target.Parent == workspace:FindFirstChild("Hitboxes") or mouse.Target.Name:find("Hitbox")) thenNetworkRemote:FireServer("UseActorAbility","Slash") task.wait(Options.AttackCooldownSlider.Value)
+end
+end
+)
+end
+end
+)
+end
+end
+})AimingGroup:AddSlider('ReachDistanceSlider', {Text ='Радиус Атаки (Reach)', Default = 30, Min = 5, Max = 150, Rounding = 0, Compact = false, Callback = function()
+end
+})AimingGroup:AddSlider('AttackCooldownSlider', {Text ='Кулдаун атаки (Задержка)', Default = 1.8, Min = 0.1, Max = 3.5, Rounding = 2, Compact = false, Callback = function()
+end
+})
+local RageGroup = Tabs.Rage:AddLeftGroupbox('Ультимативные Эксплойты (Rage)')RageGroup:AddToggle('GodModeInvisibility', {Text ='Режим Бога + Невидимость (Invincible)', Default = false, Tooltip ='Дает бессмертие и невидимость от маньяка', Callback = function(Value)
+_G.GodModeActive = Valueif Value then
+task.spawn(function()
+pcall(function()
+local char = LocalPlayer.Characterif char and char:FindFirstChild("HumanoidRootPart") thenwhile _G.GodModeActive do
+task.wait(0.05)
+if char:FindFirstChild("LowerTorso") then
+    char.LowerTorso.RootJoint.C0 = CFrame.new(0, - 99999, 0)
+end
+endend
+end
+)
+end
+)
+else
+    pcall(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("LowerTorso") then
+        LocalPlayer.Character.LowerTorso.RootJoint.C0 = CFrame.new(0, 0, 0)
+    end
+end
+)
+end
+end
+})
+local BlockGroup = Tabs.Block:AddLeftGroupbox('Автоматическая защита')BlockGroup:AddToggle('AutoBlockToggle', {Text ='Активировать Автоблок (Raging Pace)', Default = false, Callback = function(Value)
+_G.AutoBlockActive = Valueif Value then_G.BlockConnection = workspace.Hitboxes.ChildAdded:Connect(function(child)
+if _G.AutoBlockActive and child:IsA("BasePart") thenif not string.find(child.Name, LocalPlayer.Name) and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") thentask.spawn(function()
+if (child.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude < = Options.BlockDistanceSlider.Value thenNetworkRemote:FireServer("UseActorAbility","RagingPace") task.wait(1)
+end
+end
+)endend
+end
+)
+else
+    if _G.BlockConnection then
+        _G.BlockConnection:Disconnect() _G.BlockConnection = nil
+    end
+end
+end
+})BlockGroup:AddSlider('BlockDistanceSlider', {Text ='Дистанция срабатывания', Default = 12, Min = 5, Max = 30, Rounding = 0, Compact = false, Callback = function()
+end
+})ThemeManager:SetLibrary(Library); SaveManager:SetLibrary(Library); SaveManager:IgnoreThemeSettings(); SaveManager:SetIgnoreIndexes({'BackgroundColor','MainColor','AccentColor','OutlineColor','FontColor'})ThemeManager:SetFolder('ForsakenArchivedHub'); SaveManager:SetFolder('ForsakenArchivedHub/configs'); SaveManager:BuildConfigSection(Tabs.Settings); ThemeManager:ApplyToTab(Tabs.Settings); SaveManager:LoadAutoloadConfig()
+print("Forsaken Multi-Hub Beta v2.0 успешно запущен!")
