@@ -1,3 +1,123 @@
+local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
+
+Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+
+NetworkRemote = game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("RemoteEvent")
+LocalPlayer = game:GetService("Players").LocalPlayer
+originalSprintSpeed = nil
+IndexedGenerators = {}
+
+Window = Library:CreateWindow({
+    Title = 'Forsaken Hub | Pre-Alpha v1.8',
+    Center = true,
+    AutoShow = true,
+    TabPadding = 8,
+    MenuFadeTime = 0.2
+})
+
+Tabs = {
+    Home = Window:AddTab('Home'),
+    Visuals = Window:AddTab('Visuals'),
+    Generators = Window:AddTab('Generators'),
+    Player = Window:AddTab('Player'),
+    Misc = Window:AddTab('Misc'),
+    Rage = Window:AddTab('Rage'),
+    Aiming = Window:AddTab('Aiming'),
+    Block = Window:AddTab('Block'),
+    Settings = Window:AddTab('UI Settings')
+}
+
+function indexGenerators()
+    table.clear(IndexedGenerators)
+    local ingame = workspace:FindFirstChild("Map") 
+        and workspace.Map:FindFirstChild("Ingame") 
+        and workspace.Map.Ingame:FindFirstChild("Map")
+        
+    if ingame then
+        for _, obj in ipairs(ingame:GetChildren()) do
+            if obj.Name:lower():find("generator") and obj:FindFirstChild("Remotes") then
+                local rf = obj.Remotes:FindFirstChild("RF")
+                local re = obj.Remotes:FindFirstChild("RE")
+                local rootPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                
+                if rf and re and rootPart then
+                    table.insert(IndexedGenerators, {
+                        Object = obj,
+                        Position = rootPart.Position,
+                        RF = rf,
+                        RE = re
+                    })
+                end
+            end
+        end
+    end
+end
+
+local LeftHomeGroup = Tabs.Home:AddLeftGroupbox('Profile')
+local RightHomeGroup = Tabs.Home:AddRightGroupbox('Information')
+
+LeftHomeGroup:AddLabel('Welcome back, ' .. LocalPlayer.Name .. '!')
+LeftHomeGroup:AddLabel('Executor: ' .. (identifyexecutor and identifyexecutor() or "Unknown"))
+LeftHomeGroup:AddButton({Text = 'Support Discord', Func = function() setclipboard("https://discord.gg") end})
+
+RightHomeGroup:AddLabel('⚠️ Version: Pre-Alpha 1.8')
+RightHomeGroup:AddLabel('🟢 Script Status: Online')
+RightHomeGroup:AddLabel('Developers: iyre & AI')
+
+local GenGroup = Tabs.Generators:AddLeftGroupbox('Автоматизация Новых Генераторов')
+
+GenGroup:AddToggle('AutoSolveNewGen', {
+    Text = 'Авто-починка генераторов',
+    Default = false,
+    Tooltip = 'Чинит любой генератор из кэша памяти без лагов процессора',
+    Callback = function(Value)
+        _G.NewGenFarmActive = Value
+        if Value then
+            indexGenerators()
+            task.spawn(function()
+                while _G.NewGenFarmActive do
+                    task.wait(0.4)
+                    local char = LocalPlayer.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    
+                    if root then
+                        local myPos = root.Position
+                        local radius = Options.NewGenRadiusSlider.Value
+                        
+                        for _, gen in ipairs(IndexedGenerators) do
+                            if not _G.NewGenFarmActive then break end
+                            local distance = (gen.Position - myPos).Magnitude
+                            if distance <= radius then
+                                pcall(function()
+                                    gen.RF:InvokeServer("enter")
+                                    task.wait(0.05)
+                                    for i = 1, 7 do
+                                        if not _G.NewGenFarmActive then break end
+                                        gen.RE:FireServer()
+                                        task.wait(0.02)
+                                    end
+                                end)
+                                task.wait(0.5)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+})
+
+GenGroup:AddButton({
+    Text = 'Обновить базу карт (Новый раунд)',
+    Func = function()
+        indexGenerators()
+        Library:Notify("Список генераторов успешно переиндексирован!", 3)
+    end,
+    DoubleClick = false,
+    Tooltip = 'Нажми при старте нового матча'
+})
 local function getClosestEnemy(maxDistance)
     local closestPlayer = nil
     local shortestDistance = maxDistance or math.huge
@@ -160,3 +280,6 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 ThemeManager:ApplyToTab(Tabs.Settings)
 SaveManager:LoadAutoloadConfig()
 
+print("Forsaken Multi-Hub v1.8 успешно запущен локально!")
+
+GenGroup:AddSlider('NewGenRadiusSlider', {Text = 'Радиус авто-починки', Default = 20, Min = 5, Max = 300, Rounding = 0, Compact = false, Callback = function() end})
