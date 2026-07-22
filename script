@@ -448,7 +448,6 @@ local function FindNearestGenerator()
     local nearestDist = math.huge
     for _, gen in ipairs(map:GetChildren()) do
         if gen:IsA("Model") and gen.Name == "Generator" and gen:FindFirstChild("Main") and gen:FindFirstChild("Remotes") then
-            -- Проверка, что генератор не завершён (если есть Progress)
             local progress = gen:FindFirstChild("Progress")
             if progress and progress:IsA("NumberValue") and progress.Value >= 100 then
                 continue
@@ -472,23 +471,18 @@ Toggles.AutoSolve:OnChanged(function(value)
                 task.wait(0.5)
                 pcall(function()
                     local gen = FindNearestGenerator()
-                    if not gen then
-                        -- Обновим статус
-                        return
-                    end
+                    if not gen then return end
                     local remotes = gen.Remotes
                     local RF = remotes:FindFirstChild("RF")
                     local RE = remotes:FindFirstChild("RE")
                     if not RF or not RE then return end
 
-                    -- Вход в генератор
                     RF:InvokeServer("enter")
 
                     local stepsDone = 0
                     while stepsDone < 4 and Toggles.AutoSolve.Value do
                         local cooldown = Options.AutoGenCooldown.Value
                         if cooldown < 1.5 then
-                            -- Быстрая стратегия с выходом/входом
                             RE:FireServer()
                             stepsDone = stepsDone + 1
                             task.wait(0.15)
@@ -505,7 +499,6 @@ Toggles.AutoSolve:OnChanged(function(value)
                             stepsDone = stepsDone + 1
                         end
                     end
-                    -- Выход, если ещё не вышли
                     if (Options.AutoGenCooldown.Value >= 1.5) or (stepsDone == 4) then
                         pcall(function() RF:InvokeServer("leave") end)
                     end
